@@ -1,9 +1,81 @@
 require 'actor'
 
+Exit = Struct.new(:actor, :reason)
+
+class Actor
+  def notify_exited(actor, reason)
+    @lock.receive
+    begin
+      return self unless @alive
+      @links.delete(actor)
+      if @trap_exit
+        puts "Sending exit to: #{Actor.current} from #{actor}"
+        send Exit[actor, reason]
+      elsif reason
+        @interrupts << DeadActorError.new(actor, reason)
+        if @filter
+          @filter = nil
+          @ready << nil
+        end
+      end
+    ensure
+      @lock << nil
+    end
+    self
+  end
+  
+  def notify_link(actor)
+    @lock.receive
+    alive = nil
+    exit_reason = nil
+    begin
+      alive = @alive
+      exit_reason = @exit_reason
+      print "Linking #{self} to #{actor}\n"
+      @links << actor if alive and not @links.include? actor
+    ensure
+      @lock << nil
+    end
+    actor.notify_exited(self, exit_reason) unless alive
+    self
+  end
+  
+  
+  def watchdog
+    reason = nil
+    begin
+      yield
+    rescue Exception => reason
+    ensure
+      links = nil
+      Actor._unregister(self)
+      @lock.receive
+      begin
+        @alive = false
+        @mailbox = nil
+        @interrupts = nil
+        @exit_reason = reason
+        links = @links
+        @links = nil
+      ensure
+        @lock << nil
+      end
+      links.each do |actor|
+        begin
+          p [actor.object_id, self.object_id]
+          actor.notify_exited(self, reason)
+        rescue Exception
+        end
+      end
+    end
+  end
+  
+end
+
 def process(work)
   print "Working on #{work.msg}\n"
   sleep 1
-  #raise "boom" if work.msg % 10 == 7
+  raise "boom" if work.msg % 10 == 7
 end
 
 Ready = Struct.new(:this)
@@ -19,6 +91,7 @@ def drain(ready, work)
 end
 
 supervisor = Actor.spawn do
+  puts [:supervisor, Actor.current]
   ready_workers = []
   extra_work = []
 
@@ -28,6 +101,7 @@ supervisor = Actor.spawn do
     10.times do |x|
       # start 10 workers
       ready_workers << Actor.spawn_link do
+        puts [:worker, Actor.current]
         loop do
           Actor.receive do |f|
             f.when(Work) do |work|
@@ -60,6 +134,9 @@ supervisor = Actor.spawn do
           else
             extra_work << work
           end
+        end
+        f.when(Exit) do |exit|
+          puts "Actor exited due to: #{exit.reason}"
         end
         f.when(Actor::ANY) do |msg|
           p msg
