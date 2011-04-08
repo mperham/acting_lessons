@@ -4,13 +4,13 @@ Exit = Struct.new(:actor, :reason)
 
 class Actor
   def notify_exited(actor, reason)
+    exit_message = nil
     @lock.receive
     begin
       return self unless @alive
       @links.delete(actor)
       if @trap_exit
-        puts "Sending exit to: #{Actor.current} from #{actor}"
-        send Exit[actor, reason]
+        exit_message = Exit[actor, reason]
       elsif reason
         @interrupts << DeadActorError.new(actor, reason)
         if @filter
@@ -21,6 +21,8 @@ class Actor
     ensure
       @lock << nil
     end
+    puts "Sending exit to: #{self} from #{actor}"
+    send exit_message if exit_message
     self
   end
   
