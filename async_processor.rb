@@ -90,7 +90,10 @@ def drain(ready, work)
   end
 end
 
-supervisor = Actor.spawn do
+supervisor = nil
+
+Actor.spawn do
+  supervisor = Actor.current
   puts [:supervisor, Actor.current]
   ready_workers = []
   extra_work = []
