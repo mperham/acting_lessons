@@ -19,7 +19,6 @@ class Actor
     ensure
       @lock << nil
     end
-    puts "Sending exit to: #{self} from #{actor}"
     send exit_message if exit_message
     self
   end
@@ -31,7 +30,6 @@ class Actor
     begin
       alive = @alive
       exit_reason = @exit_reason
-      print "Linking #{self} to #{actor}\n"
       @links << actor if alive and not @links.include? actor
     ensure
       @lock << nil
@@ -62,7 +60,6 @@ class Actor
       end
       links.each do |actor|
         begin
-          p [actor.object_id, self.object_id]
           actor.notify_exited(self, reason)
         rescue Exception
         end
@@ -90,9 +87,11 @@ def drain(ready, work)
   end
 end
 
-supervisor = Actor.spawn do
+initializer = Rubinius::Channel.new
+supervisor = nil
+Actor.spawn do
   supervisor = Actor.current
-  puts [:supervisor, Actor.current]
+  initializer << nil
   ready_workers = []
   extra_work = []
 
@@ -102,7 +101,6 @@ supervisor = Actor.spawn do
     10.times do |x|
       # start 10 workers
       ready_workers << Actor.spawn_link do
-        puts [:worker, Actor.current]
         loop do
           Actor.receive do |f|
             f.when(Work) do |work|
@@ -117,7 +115,6 @@ supervisor = Actor.spawn do
       end
     end
   
-    puts "Supervising"
     loop do
       Actor.receive do |f|
         f.when(Ready) do |who|
@@ -136,8 +133,8 @@ supervisor = Actor.spawn do
             extra_work << work
           end
         end
-        f.when(DeadActorError) do |exit|
-          puts "Actor exited due to: #{exit.reason}"
+        f.when(Actor::DeadActorError) do |exit|
+          print "Actor exited due to: #{exit.reason}\n"
         end
         f.when(Actor::ANY) do |msg|
           p msg
@@ -152,15 +149,17 @@ supervisor = Actor.spawn do
   end
 end
 
+initializer.receive
+
 20.times do |x|
   supervisor << Work[x]
 end
 
-sleep 3
+sleep 4
 
 puts 'Adding more work'
 20.times do |x|
   supervisor << Work[x]
 end
 
-sleep 3
+sleep 4
