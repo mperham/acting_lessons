@@ -1,7 +1,5 @@
 require 'actor'
 
-Exit = Struct.new(:actor, :reason)
-
 class Actor
   def notify_exited(actor, reason)
     exit_message = nil
@@ -10,7 +8,7 @@ class Actor
       return self unless @alive
       @links.delete(actor)
       if @trap_exit
-        exit_message = Exit[actor, reason]
+        exit_message = DeadActorError.new(actor, reason)
       elsif reason
         @interrupts << DeadActorError.new(actor, reason)
         if @filter
@@ -92,9 +90,7 @@ def drain(ready, work)
   end
 end
 
-supervisor = nil
-
-Actor.spawn do
+supervisor = Actor.spawn do
   supervisor = Actor.current
   puts [:supervisor, Actor.current]
   ready_workers = []
@@ -140,7 +136,7 @@ Actor.spawn do
             extra_work << work
           end
         end
-        f.when(Exit) do |exit|
+        f.when(DeadActorError) do |exit|
           puts "Actor exited due to: #{exit.reason}"
         end
         f.when(Actor::ANY) do |msg|
